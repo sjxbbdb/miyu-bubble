@@ -111,33 +111,12 @@ PY
     ;;
 
   now)
-    echo "立刻触发一次（等 miyu 回话，约 5-40 秒）..."
-    nohup bash -c '
-      source <(sed -n "/^idle_seconds()/,/^}/p" '"$SCRIPT"')
-      source <(sed -n "/^build_context()/,/^}/p" '"$SCRIPT"')
-      CONV_DB="$HOME/.miyu/home/$(id -un)/conversation.db"
-      MEM_DB="$HOME/.miyu/personas/default/memory/memory.db"
-      DIARY_N=8; FACT_N=8
-      idle=$(idle_seconds); ctx=$(build_context)
-      prompt="（这是一条后台触发的自检提示，不是对方发给你的消息。对方已经 ${idle} 秒没有新的输入了。）
-
-${ctx}
-
-现在请你主动找对方说一句话。要求：
-1. 用你自己的语气，自然，像平时聊天那样
-2. 可以顺着最近聊的话题跟进，也可以只是打个招呼、说点你想到的
-3. 适度询问 —— 但不要追问、不要催活、不要提任何要求
-4. 结合上面给出的当前时间，别说成不合时宜的话
-5. 一到两句话，简短，别长篇大论
-6. 直接输出你要说的话本身，不要写「我来找你了」这类旁白"
-      raw=$(miyu ask -c --output-format json --timeout 180 "$prompt" 2>/dev/null)
-      msg=$(printf "%s" "$raw" | python3 -c "import json,sys
-try: print(json.loads(sys.stdin.read()).get(\"text\",\"\") or \"\")
-except: print(\"\")")
-      [ -n "$msg" ] && notify-send -a "小鱼" -i face-smile "小鱼找你" "$msg"
-      printf "[%s] 手动触发：%s\n" "$(date "+%m-%d %H:%M:%S")" "$msg" >> '"$LOG"'
-    ' > /dev/null 2>&1 &
-    echo "  已发到后台，等通知弹出来"
+    # 只调主脚本的 --once，不再自己抄一份通知逻辑（两份代码必然漂移）
+    echo "立刻触发一次（等小鱼回话，约 5-40 秒）..."
+    "$SCRIPT" --once > /dev/null 2>&1 &
+    echo "  已发到后台。通知带两个按钮："
+    echo "    [去回她]  → 开一个终端接上对话"
+    echo "    [知道了]  → 关掉"
     ;;
 
   log)

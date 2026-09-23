@@ -161,6 +161,38 @@ Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus   # notify-sen
 3. **不能靠 CLI 的返回判断成功**。CLI 返回占位符 ≠ 失败。
    真正的成功判据是会话库里那条记录最终变成了正常内容。
 
+## 实测发现：SQLite 的 max(a, b) 不是聚合函数
+
+改空闲判据时踩的坑。
+
+想取「用户最后一次开口」和「小鱼最后一次说完」里较晚的那个，第一版写成：
+
+```sql
+select max(coalesce(user_timestamp,''), coalesce(assistant_timestamp,'')) from turns
+```
+
+**这是错的。** SQLite 里 `max()` 传**两个及以上参数**时是**标量函数** ——
+它对每一行算出「这两个值里较大者」，而不是在整个结果集上求最大。
+没有 GROUP BY 的情况下，`select` 列表里出现标量 `max()`，返回的是**任意一行**的值。
+
+实测拿到 `2026-09-22T17:09:59`，于是空闲被算成 **77624 秒（21.6 小时）** ——
+**空闲判定永远通过，每轮掷完骰子立刻冒泡**，不管用户是不是正在聊。
+
+正确写法要嵌套一层：
+
+```sql
+select max(m) from (
+  select max(coalesce(user_timestamp,''), coalesce(assistant_timestamp,'')) as m
+  from turns
+)
+```
+
+内层逐行取较大者，外层聚合取最大。修完实测 63 秒，符合预期。
+
+**教训**：这个 bug 不会报错、不会崩溃，只会让行为**静默地变得过于热情**。
+唯一抓到它的方式是看日志里那行 `手动触发（当前空闲 77566s）` ——
+如果当时只测"能不能发出消息"，它会完美通过。
+
 ## 未验证的部分
 
 如实标注：
