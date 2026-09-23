@@ -1,0 +1,31 @@
+[Unit]
+Description=Miyu 主动找你（基准×随机的自调度循环）
+Documentation=file:///home/almost/miyu-bubble.sh
+# 通知要走桌面会话，所以等图形环境；但不必等它跑完才启动
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=/home/almost/miyu-bubble.sh
+
+# ---- 环境变量 ----
+# 语言：不设这个，miyu 会用英文回你（display.language = auto 跟着 LANG 走）
+Environment=LANG=zh_CN.UTF-8
+Environment=LANGUAGE=zh_CN:en
+# notify-send 需要能连上会话总线
+Environment=XDG_RUNTIME_DIR=/run/user/1000
+Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus
+
+# ---- 间隔可调：改这里不用动脚本 ----
+# 基准 45 分钟 × 随机 [0.5, 2.0]  →  实际间隔落在 22.5 ~ 90 分钟
+Environment=MIYU_BUBBLE_BASE=2700
+
+Restart=always
+RestartSec=30
+
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=graphical-session.target
