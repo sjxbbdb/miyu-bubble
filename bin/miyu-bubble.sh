@@ -60,15 +60,34 @@ print(int(base * random.uniform(lo, hi)))
 
 # ==============================================================================
 #  2. 真实空闲时长（秒）
+#
+#  判据是「双方都停下来」而不是「用户停止说话」：
+#    · user_timestamp       —— 用户最后一次开口
+#    · assistant_timestamp  —— 小鱼最后一次说完
+#  取两者较晚的那个。否则会出现：用户问完就走开，小鱼还在答，我们插进去撞车。
+#
+#  另外：如果有 turn 的 assistant_timestamp 为空，说明有一轮正在飞 ——
+#  直接返回 0（等价于"刚刚还在活动"），本轮不打扰。
 # ==============================================================================
 idle_seconds() {
     python3 - "$CONV_DB" <<'PY'
 import sqlite3, sys, datetime
 try:
     con = sqlite3.connect(f'file:{sys.argv[1]}?mode=ro', uri=True)
-    row = con.execute("select max(user_timestamp) from turns").fetchone()
+
+    # 有在飞的回合 → 视为不空闲
+    inflight = con.execute(
+        "select count(*) from turns "
+        "where assistant_timestamp is null or assistant_timestamp = ''").fetchone()[0]
+    if inflight:
+        print(0); raise SystemExit
+
+    row = con.execute(
+        "select max(coalesce(user_timestamp,''), coalesce(assistant_timestamp,'')) "
+        "from turns").fetchone()
     if not row or not row[0]:
         print(0); raise SystemExit
+
     last = datetime.datetime.fromisoformat(row[0])
     if last.tzinfo is None:
         last = last.replace(tzinfo=datetime.timezone.utc)
@@ -197,6 +216,23 @@ except Exception:
 
     if [ -z "$msg" ]; then
         log "⚠️ miyu 没返回内容，本轮放弃"
+        continue
+    fi
+
+    # ── 占位符保护 ──────────────────────────────────────────────────────────
+    # 当这一轮撞上别人正在处理的回合时，miyu 不会立刻生成内容，而是先写一段
+    # <system-reminder>…正在由另一轮回复处理中…</system-reminder> 占位。
+    #
+    # 实测（2026-09-23）：这不是失败 —— miyu 会把我们的 prompt 排队，
+    # 等对方回合跑完后**用真实回复覆写**这条记录（DB 里能看到 assistant_content
+    # 被替换成正常内容）。
+    #
+    # 但 CLI 在这一刻返回的就是那段占位文本。**绝不能把它弹到桌面通知里** ——
+    # 用户看到的是系统内部告警，直接出戏。
+    #
+    # 所以这里放弃本轮（消息其实已经进会话了，只是没有通知）。
+    if printf '%s' "$msg" | grep -qE '<system-reminder>|正在由另一轮回复处理中|已被中断'; then
+        log "⚠️ 撞上在飞的回合，miyu 返回占位符（prompt 已排队，稍后会被真实回复覆写），本轮不通知"
         continue
     fi
 
