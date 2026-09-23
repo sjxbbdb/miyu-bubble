@@ -252,6 +252,28 @@ MIYU_BUBBLE_SESSION=""        # 留空 = 跟随当前会话（默认，见下方
 而且 miyu 自己的记忆系统（episodes / facts）是跨会话的，
 即使会话历史是空的，她仍然记得你们聊过什么。
 
+## 实测发现：按钮应该「先聚焦，没有再开」
+
+第一版点「去回她」是**无条件** `kitty --title 小鱼 miyu`。
+用户点了两次，就攒出两个窗口 —— 每次点都多一个，很快满屏。
+
+改成先查已有窗口：
+
+```bash
+wid=$(niri msg --json windows | jq -r '.[] | select(.title == "小鱼") | .id' | head -1)
+if [ -n "$wid" ]; then
+    niri msg action focus-window --id "$wid"
+else
+    niri msg action spawn -- kitty --title "小鱼" miyu
+fi
+```
+
+**验证时踩的坑**：测试期间用户正在操作终端，我发完 `focus-window` 后 sleep 2 秒再查，
+发现焦点「跳」到了别的窗口，一度以为 focus 没生效。
+
+改成**发完立刻查**（不加 sleep）后连续三次都成功 —— 之前的现象是用户的手在抢焦点，
+不是命令有问题。**在有真人同时操作的机器上做焦点测试，必须即时读取。**
+
 ## 未验证的部分
 
 如实标注：

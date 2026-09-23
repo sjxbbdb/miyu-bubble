@@ -322,11 +322,22 @@ except Exception:
 
         case "${selected:-}" in
             reply)
-                log "用户点了「去回她」，打开终端"
+                # 先找已有的「小鱼」窗口 —— 有就聚焦，没有才新开。
+                # 最早那版每次都 spawn，用户点两下就攒出两个窗口，很烦。
+                wid=""
                 if command -v niri >/dev/null 2>&1; then
-                    niri msg action spawn -- kitty --title "小鱼" miyu >/dev/null 2>&1 \
-                        || setsid kitty --title "小鱼" miyu >/dev/null 2>&1 &
+                    wid=$(niri msg --json windows 2>/dev/null \
+                          | jq -r '.[] | select(.title == "小鱼") | .id' 2>/dev/null \
+                          | head -1)
+                fi
+                if [ -n "$wid" ]; then
+                    log "用户点了「去回她」，聚焦已有窗口 id=$wid"
+                    niri msg action focus-window --id "$wid" >/dev/null 2>&1
+                elif command -v niri >/dev/null 2>&1; then
+                    log "用户点了「去回她」，新开终端"
+                    niri msg action spawn -- kitty --title "小鱼" miyu >/dev/null 2>&1
                 else
+                    log "用户点了「去回她」，新开终端（无 niri）"
                     setsid kitty --title "小鱼" miyu >/dev/null 2>&1 &
                 fi
                 ;;
