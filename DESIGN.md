@@ -193,6 +193,65 @@ select max(m) from (
 唯一抓到它的方式是看日志里那行 `手动触发（当前空闲 77566s）` ——
 如果当时只测"能不能发出消息"，它会完美通过。
 
+## 实测发现：会话寻址是人格隔离的，而且指针会移动
+
+用户反馈「冒泡跑到别的会话去了」，查出来的完整链条：
+
+### ① miyu 有两条互不干扰的会话车道
+
+源码里的注释写得很直白：
+
+```rust
+/// normal 车道永不落进终端集成会话(08-25 用户裁定)：指针缺失自举新会话
+fn ensure_repl_session_never_lands_on_the_terminal_session()
+```
+
+也就是说：**每次开新的 REPL 都会新建一条会话**，而 `app_state` 表里的指针随之移动：
+
+```
+current_session                        = sess_1790175219851_cb71752f
+current_session_persona:default        = default
+current_session_persona:persona-8fa... = sess_1790175219851_cb71752f
+```
+
+`-c` 读的就是 `current_session_persona:<当前人格>`。
+
+### ② 会话名是按人格隔离的
+
+```rust
+fn find_session_by_name_filtered(&self, persona: &str, name: &str, ...) {
+    "SELECT ... FROM sessions
+      WHERE persona = ?1 AND kind = 'user' AND name = ?2 COLLATE NOCASE
+```
+
+所以 `miyu ask --session "终端集成会话"` 在 `default` 人格下**失败** ——
+那名字属于另一个 persona。而 `--session default`（用 session_id）也不行，
+它只认名字和编号。编号还不稳定（列表按最近活动排序，每次都变）。
+
+### ③ 结论：没有稳定的外部寻址方式
+
+| 寻址方式 | 结果 |
+|---|---|
+| `-c` | 跟着「当前人格 × 当前会话」走 —— 会漂 |
+| `--session <session_id>` | ❌ 不认（`default` 报"找不到该会话"） |
+| `--session <名字>` | ⚠️ 只在**同人格**内有效 |
+| `--session <编号>` | ⚠️ 不稳定，列表顺序会变 |
+
+### ④ 因此加的配置
+
+```bash
+MIYU_BUBBLE_SESSION=""        # 留空 = 跟随当前会话（默认，见下方取舍）
+```
+
+| 取值 | 送到哪 | 取舍 |
+|---|---|---|
+| 留空 | 你当前所在的那条会话 | 一定送到你眼前，但**上下文可能很薄**（新会话没有历史） |
+| 指定名字/编号 | 钉死在那条会话 | 上下文完整，但**你得自己保证会回去看** |
+
+**默认留空**，因为"消息送到眼前"比"上下文完整"更重要 ——
+而且 miyu 自己的记忆系统（episodes / facts）是跨会话的，
+即使会话历史是空的，她仍然记得你们聊过什么。
+
 ## 未验证的部分
 
 如实标注：

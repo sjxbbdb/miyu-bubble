@@ -46,6 +46,21 @@ JITTER_MAX="${MIYU_BUBBLE_MAX:-2.0}"   # 随机上界
 DIARY_N=8            # 喂几条近期日记
 FACT_N=8             # 喂几条事实
 
+# 目标会话。留空 = 用 -c（跟当前终端会话走）。
+#
+# ⚠️ 会话名是**按人格隔离**的（miyu 的 find_session_by_name 会带上 persona 条件），
+#    所以「终端集成会话」这个名字只在 default 人格下能查到 —— 换人格后就查不到了。
+#    而且 miyu 有条设计：normal 车道永不落进终端集成会话，每次开新 REPL 都会
+#    新建一条会话，「当前会话」指针随之移动。
+#
+#    留空（默认）：跟着你当前所在的会话走 —— 消息一定送到你眼前，
+#                  但上下文可能很薄（新会话没有历史）。
+#    指定值：     钉死在一条会话上 —— 上下文完整，但你得自己保证会回去看。
+#
+#    取值形式：会话名（如「终端集成会话」）或 `miyu session list` 里的编号。
+TARGET_SESSION="${MIYU_BUBBLE_SESSION:-}"
+FACT_N=8             # 喂几条事实
+
 # ---- 路径 --------------------------------------------------------------------
 export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
 MIYU_HOME="$HOME/.miyu"
@@ -230,8 +245,13 @@ ${ctx}
     # 用 --output-format json：一行终态，text 字段是干净的回复正文，
     # 还附带 usage / context_tokens / elapsed_ms，可以顺手记进日志。
     # （text 模式下即使加 --quiet 也能用，但 json 更省心且信息更多。）
-    raw=$(miyu ask -c --output-format json --timeout 180 "$prompt" 2>/dev/null)
-    rc=$?
+    if [ -n "$TARGET_SESSION" ]; then
+        raw=$(miyu ask --session "$TARGET_SESSION" --output-format json --timeout 180 "$prompt" 2>/dev/null)
+        rc=$?
+    else
+        raw=$(miyu ask -c --output-format json --timeout 180 "$prompt" 2>/dev/null)
+        rc=$?
+    fi
 
     if [ "$rc" -ne 0 ]; then
         log "⚠️ miyu 退出码 $rc，本轮放弃"
@@ -327,7 +347,7 @@ if [ "$ONCE" = "1" ]; then
     exit $?
 fi
 
-log "── 启动 ── 基准 ${BASE}s ×[${JITTER_MIN},${JITTER_MAX}]"
+log "── 启动 ── 基准 ${BASE}s ×[${JITTER_MIN},${JITTER_MAX}]  目标会话=${TARGET_SESSION:-（跟随当前）}"
 while true; do
     cycle || true
 done

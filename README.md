@@ -161,6 +161,11 @@ systemctl --user daemon-reload && systemctl --user restart miyu-bubble
 | `MIYU_BUBBLE_BASE` | `2700` | 基准间隔（秒） |
 | `MIYU_BUBBLE_MIN` | `0.5` | 随机下界 |
 | `MIYU_BUBBLE_MAX` | `2.0` | 随机上界 |
+| `MIYU_BUBBLE_SESSION` | 空 | 目标会话；留空=跟随你当前所在的会话 |
+
+> **关于 `MIYU_BUBBLE_SESSION`**：miyu 的会话名是**按人格隔离**的，而且每次开新 REPL 都会
+> 新建会话、「当前会话」指针随之移动。所以留空 = 消息一定送到你眼前但上下文可能很薄；
+> 指定 = 上下文完整但你得自己回去看。详见 [DESIGN.md](DESIGN.md)。
 
 ---
 
